@@ -16,6 +16,15 @@ Or for the most recent commit on the master branch use:
 qwiic-adc-rs = { git = "https://github.com/PixelCoda/QwiicADC-Rust.git", version = "*" }
 ```
 
+```
+Most functions are not implemented yet. So no examples. This will change in the next few days.
+
+In the meantime, checkout my other Qwiic-I2C crates:
+https://crates.io/crates/qwiic-lcd-rs
+https://crates.io/crates/qwiic-relay-rs
+```
+
+
 ## References
 
 * https://github.com/sparkfun/SparkFun_ADS1015_Arduino_Library
