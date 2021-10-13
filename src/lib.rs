@@ -186,7 +186,7 @@ impl QwiicADC {
         self.write_register((Pointers::Convert as u8), config.into());
 
         // delay(ADS1015_DELAY);
-        thread::sleep(Duration::new(0, 10_000));
+        thread::sleep(Duration::from_secs(2));
 
 
         let read = self.read_register(Pointers::Convert as u8);
