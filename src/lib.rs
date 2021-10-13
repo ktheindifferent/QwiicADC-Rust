@@ -29,6 +29,14 @@ pub enum Addresses {
 }
 
 #[derive(Copy, Clone)]
+pub enum OS {
+    No = 0x48,
+    Single = 0x19,
+    Ready = 0x4A,
+    NotReady = 0x4B
+}
+
+#[derive(Copy, Clone)]
 pub enum Pointers {
     Convert = 0x00,
     Config = 0x01,
@@ -151,10 +159,66 @@ impl QwiicADC {
         Ok(())
     }
 
+    pub fn get_single_ended(&mut self, channel: u8) -> ReadResult {
+        if (channel > 3) {
+            return Ok(0);
+        }
+
+        let mut config = (OS::Ready as u8) | (Modes::Continuous as u8) | (SampleRates::S_1600HZ as u8);
+        config = config | PGA::Two as u8;
+
+        if channel == 0 {
+            config = config | Mux::Single0 as u8;
+        }
+
+        if channel == 1 {
+            config = config | Mux::Single1 as u8;
+        }
+
+        if channel == 2 {
+            config = config | Mux::Single2 as u8;
+        }
+
+        if channel == 3 {
+            config = config | Mux::Single3 as u8;
+        }
+
+        self.write_register((Pointers::Convert as u8), config.into());
+
+        // delay(ADS1015_DELAY);
+        thread::sleep(Duration::new(0, 10_000));
+
+
+        let read = self.read_register(Pointers::Convert as u8);
+        match read {
+            Ok(r) => {
+                return Ok(r >> 4);
+            },
+            Err(e) => {
+                return Ok(0);
+            }
+        }
+
+      
+
+    }
+
+
+
     pub fn read_register(&mut self, location: u8) -> ReadResult {
         // self.dev.smbus_write_byte(Pointers::Convert as u8)?; // Do we need this?
         let byte = self.dev.smbus_read_byte_data(location)?;
         Ok(byte)
+    }
+    
+
+
+
+    pub fn write_register(&mut self, register: u8, val: usize) -> ADCResult {
+        self.dev.smbus_write_byte(register)?;
+        self.dev.smbus_write_byte((val >> 8) as u8)?;
+        self.dev.smbus_write_byte((val as u8) & 0xFF)?;
+        Ok(())
     }
 
     pub fn write_byte(&mut self, command: u8) -> ADCResult {
@@ -177,8 +241,13 @@ mod tests {
  
         let cfg = qwiic_relay.read_register(0x01).unwrap();
 
-        println!("cfg: {}", cfg);
 
+
+        let get_single_ended = qwiic_relay.get_single_ended(1);
+
+
+        println!("cfg: {}", cfg);
+        println!("get_single_ended: {}", get_single_ended);
 
 
 
