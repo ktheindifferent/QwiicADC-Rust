@@ -36,7 +36,72 @@ pub enum Pointers {
     HighThresh = 0x03
 }
 
+#[derive(Copy, Clone)]
+pub enum Modes {
+    Continuous =0x0000,
+    Single = 0x0100,
+}
 
+#[derive(Copy, Clone)]
+pub enum Mux {
+    Single0 = 0x4000,
+    Single1 = 0x5000,
+    Single2 = 0x6000,
+    Single3 = 0x7000,
+    DiffP0N1 = 0x0000,
+    DiffP0N3 = 0x1000,
+    DiffP1N3 = 0x2000,
+    DiffP2N3 = 0x3000,
+}
+
+#[derive(Copy, Clone)]
+pub enum SampleRates {
+    S_128HZ = 0x0000,
+    S_250HZ = 0x0020,
+    S_490HZ = 0x0040,
+    S_920HZ = 0x0060,
+    S_1600HZ = 0x0080,
+    S_2400HZ = 0x00A0,
+    S_3300HZ = 0x00C0
+}
+
+
+#[derive(Copy, Clone)]
+pub enum PGA {
+    Mask = 0x0E00,
+    TwoThirds = 0x0000, // +/- 6.144v
+    One = 0x0200,       // +/- 4.096v
+    Two = 0x0400,       // +/- 2.048v
+    Four = 0x0600,      // +/- 1.024v
+    Eight = 0x0800,     // +/- 0.512v
+    Sixteen = 0x0A00    // +/- 0.256v
+}
+
+#[derive(Copy, Clone)]
+pub enum Cmode {
+    Trad = 0x0000,      // Traditional comparator with hysteresis (default)
+    Window = 0x0010,    // Window comparator
+}
+
+#[derive(Copy, Clone)]
+pub enum Cpol {
+    ActvLow = 0x0000,   // ALERT/RDY pin is low when active (default)
+    ActvHigh = 0x0008,  // ALERT/RDY pin is high when active
+}
+
+#[derive(Copy, Clone)]
+pub enum Clat {
+    NonLat = 0x0000,
+    Latch = 0x0004,
+}
+
+#[derive(Copy, Clone)]
+pub enum Cque {
+    OneConv = 0x0000,
+    TwoConv = 0x0001,
+    FourConv = 0x0002,
+    None = 0x0003
+}
 
 pub struct QwiicADCConfig {
     model: String
