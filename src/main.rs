@@ -12,7 +12,7 @@ fn main() {
 
 
 
-    let get_single_ended = qwiic_relay.get_single_ended(1);
+    let get_single_ended = qwiic_relay.get_single_ended(1).unwrap();
 
 
     println!("cfg: {}", cfg);
