@@ -20,6 +20,22 @@ use std::time::Duration;
 use i2cdev::core::*;
 use i2cdev::linux::{LinuxI2CDevice, LinuxI2CError};
 
+#[derive(Copy, Clone)]
+pub enum Addresses {
+    Gnd = 0x48,
+    Vdd = 0x19,
+    Sda = 0x4A,
+    Scl = 0x4B
+}
+
+#[derive(Copy, Clone)]
+pub enum Pointers {
+    Convert = 0x00,
+    Config = 0x01,
+    LowThresh = 0x02,
+    HighThresh = 0x03
+}
+
 
 
 pub struct QwiicADCConfig {
@@ -46,7 +62,7 @@ pub struct QwiicADC {
 
 type RelayDeviceStatus = Result<bool, LinuxI2CError>;
 type ADCResult = Result<(), LinuxI2CError>;
-type VersionResult = Result<u8, LinuxI2CError>;
+type ReadResult = Result<u8, LinuxI2CError>;
 
 impl QwiicADC {
     pub fn new(config: QwiicADCConfig, bus: &str, i2c_addr: u16) -> Result<QwiicADC, LinuxI2CError> {
@@ -70,8 +86,11 @@ impl QwiicADC {
         Ok(())
     }
 
-
-
+    pub fn read_register(&mut self, location: u8) -> ReadResult {
+        self.dev.smbus_write_byte(Pointers::Convert as u8)?; // Do we need this?
+        let byte = self.dev.smbus_read_byte_data(location)?;
+        Ok(byte)
+    }
 
     pub fn write_byte(&mut self, command: u8) -> ADCResult {
         self.dev.smbus_write_byte(command)?;
@@ -91,6 +110,13 @@ mod tests {
         let config = QwiicADCConfig::default();
         let mut qwiic_relay = QwiicADC::new(config, "/dev/i2c-1", 0x08).expect("Could not init device");
  
+        let cfg = qwiic_relay.read_register(0x01).unwrap();
+
+        println!("{}", cfg);
+
+
+
+
     }
 }
 
