@@ -4,7 +4,7 @@ description = "This library aims at controlling Qwiic Relays using I2C from Linu
 version = "0.1.0"
 authors = ["Caleb Mitchell Smith-Woolrich <calebsmithwoolrich@gmail.com>"]
 license = "MIT OR Apache-2.0"
-documentation = "https://docs.rs/qwiic-relay-rs"
+documentation = "https://docs.rs/qwiic-adc-rs"
 
 [dependencies]
 i2cdev = "0.4.4"
