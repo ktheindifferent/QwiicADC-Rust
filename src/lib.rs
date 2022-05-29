@@ -148,11 +148,6 @@ impl QwiicADC {
 
     pub fn init(&mut self) -> ADCResult {
 
-
-
-
-
-  
         // Wait for the QwiicADC to set up
         thread::sleep(Duration::from_millis(200));
 
@@ -203,7 +198,54 @@ impl QwiicADC {
 
     }
 
+    pub fn get_differential(&mut self, cfg_mux_diff: Option<u16>) -> ReadResult {
 
+        let mut config_mux_diff = Mux::DiffP0N1 as u16;
+        if cfg_mux_diff.is_some(){
+            config_mux_diff = cfg_mux_diff.unwrap();
+        }
+
+        if config_mux_diff == Mux::DiffP0N1 as u16 ||
+           config_mux_diff == Mux::DiffP0N3 as u16 ||
+           config_mux_diff == Mux::DiffP1N3 as u16 ||
+           config_mux_diff == Mux::DiffP2N3 as u16 {
+            // Do nothing and carry on below    
+        } else {
+            return Ok(0);
+        }
+
+
+        let mut config = (OS::Single as u16) | (Modes::Continuous as u16) | (SampleRates::S_1600HZ as u16);
+        config = config | PGA::Two as u16;
+
+        config = config | config_mux_diff; // default is ADS1015_CONFIG_MUX_DIFF_P0_N1
+
+
+        self.write_register((Pointers::Config as u8), config.into());
+
+        // delay(ADS1015_DELAY);
+        thread::sleep(Duration::from_secs(2));
+
+
+        let read = self.read_register(Pointers::Convert as u8);
+        match read {
+            Ok(r) => {
+                return Ok(r >> 4);
+            },
+            Err(e) => {
+                return Ok(0);
+            }
+        }
+
+      
+      
+        
+
+
+
+
+
+    }
 
     pub fn read_register(&mut self, location: u8) -> ReadResult {
         // self.dev.smbus_write_byte(Pointers::Convert as u8)?; // Do we need this?
