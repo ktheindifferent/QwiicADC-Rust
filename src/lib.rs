@@ -247,6 +247,13 @@ impl QwiicADC {
 
     }
 
+
+    pub fn get_analog_data(&mut self, channel: u8) -> ReadResult {
+        return self.get_single_ended(channel);
+    }
+
+
+
     pub fn read_register(&mut self, location: u8) -> ReadResult {
         // self.dev.smbus_write_byte(Pointers::Convert as u8)?; // Do we need this?
         let byte = self.dev.smbus_read_byte_data(location)?;
