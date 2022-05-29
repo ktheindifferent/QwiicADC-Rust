@@ -14,7 +14,7 @@ fn main() {
 
     let get_single_ended = qwiic_relay.get_single_ended(0).unwrap();
 
-    let get_differential = qwiic_relay.get_differential(0).unwrap();
+    let get_differential = qwiic_relay.get_differential(None).unwrap();
 
 
     println!("cfg: {}", cfg);
