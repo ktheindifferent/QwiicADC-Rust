@@ -1,9 +1,10 @@
 [package]
 name = "qwiic-adc-rs"
-description = "This library aims at controlling Qwiic Relays using I2C from Linux."
+description = "A Rust library for controlling SparkFun Qwiic ADC (ADS1015) using I2C from Linux."
 version = "0.1.11"
 authors = ["Caleb Mitchell Smith-Woolrich <calebsmithwoolrich@gmail.com>"]
 license = "MIT OR Apache-2.0"
+edition = "2021"
 documentation = "https://docs.rs/qwiic-adc-rs"
 repository = "https://github.com/PixelCoda/QwiicADC-Rust"
 readme = "README.md"
