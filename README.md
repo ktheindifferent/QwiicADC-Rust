@@ -16,13 +16,76 @@ Or for the most recent commit on the master branch use:
 qwiic-adc-rs = { git = "https://github.com/PixelCoda/QwiicADC-Rust.git", version = "*" }
 ```
 
-```
-Most functions are not implemented yet. So no examples. This will change in the next few days.
+## Example Usage
 
-In the meantime, checkout my other Qwiic-I2C crates:
-https://crates.io/crates/qwiic-lcd-rs
-https://crates.io/crates/qwiic-relay-rs
+```rust
+use qwiic_adc_rs::*;
+
+fn main() {
+    // Create ADC with default configuration (ADS1015)
+    let config = QwiicADCConfig::default();
+    let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48).unwrap();
+    
+    // Initialize and check connection
+    adc.init().unwrap();
+    if !adc.is_connected() {
+        println!("ADC device not found!");
+        return;
+    }
+    
+    // Configure the ADC
+    adc.set_gain(PGA::Two).unwrap();  // ±2.048V range
+    adc.set_sample_rate(SampleRates::S1600Hz).unwrap();
+    
+    // Read single-ended channel
+    let raw_value = adc.get_single_ended(0).unwrap();
+    let voltage = adc.raw_to_voltage(raw_value, PGA::Two);
+    println!("Channel 0: {} mV", voltage);
+    
+    // Read differential input
+    let diff_value = adc.get_differential(Some(Mux::DiffP0N1 as u16)).unwrap();
+    println!("Differential P0-N1: {}", diff_value);
+    
+    // Use continuous mode for streaming
+    adc.start_continuous(0).unwrap();
+    for _ in 0..10 {
+        let value = adc.read_last_conversion().unwrap();
+        println!("Continuous reading: {}", value);
+    }
+    adc.stop_continuous().unwrap();
+}
 ```
+
+## Features
+
+- ✅ Single-ended ADC readings (4 channels)
+- ✅ Differential ADC readings (4 configurations)
+- ✅ Configurable gain settings (6 levels)
+- ✅ Configurable sample rates (128Hz to 3300Hz)
+- ✅ Continuous and single-shot conversion modes
+- ✅ Voltage conversion from raw ADC values
+- ✅ Threshold settings for comparator mode
+- ✅ Support for both ADS1015 (12-bit) and ADS1115 (16-bit)
+
+## API Documentation
+
+The library provides a comprehensive API for controlling the ADC:
+
+- `new()` - Create a new ADC instance
+- `init()` - Initialize the device
+- `is_connected()` - Check if device is responding
+- `get_single_ended()` - Read single-ended channel (0-3)
+- `get_differential()` - Read differential input
+- `get_analog_data()` - Convenience wrapper for single-ended read
+- `set_gain()` / `get_gain()` - Configure/read gain settings
+- `set_sample_rate()` / `get_sample_rate()` - Configure/read sample rate
+- `set_mode()` - Set operating mode (continuous/single-shot)
+- `start_continuous()` / `stop_continuous()` - Control continuous mode
+- `read_last_conversion()` - Read last conversion result
+- `set_low_threshold()` / `set_high_threshold()` - Configure comparator
+- `raw_to_voltage()` - Convert raw ADC to millivolts
+
+See the [documentation](https://docs.rs/qwiic-adc-rs) for detailed API information.
 
 
 ## References
