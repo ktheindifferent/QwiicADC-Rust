@@ -246,6 +246,146 @@ impl QwiicADC {
         self.read_register(Pointers::Config as u8).is_ok()
     }
     
+    /// Set the gain setting for the ADC
+    ///
+    /// # Arguments
+    /// * `gain` - PGA gain setting
+    pub fn set_gain(&mut self, gain: PGA) -> ADCResult {
+        let mut config = self.read_register_16bit(Pointers::Config as u8)?;
+        config &= !(PGA::Mask as u16);  // Clear gain bits
+        config |= gain as u16;  // Set new gain
+        self.write_register(Pointers::Config as u8, config as usize)?;
+        Ok(())
+    }
+    
+    /// Get the current gain setting
+    pub fn get_gain(&mut self) -> Result<u16, LinuxI2CError> {
+        let config = self.read_register_16bit(Pointers::Config as u8)?;
+        Ok(config & (PGA::Mask as u16))
+    }
+    
+    /// Set the sample rate for the ADC
+    ///
+    /// # Arguments
+    /// * `rate` - Sample rate setting
+    pub fn set_sample_rate(&mut self, rate: SampleRates) -> ADCResult {
+        let mut config = self.read_register_16bit(Pointers::Config as u8)?;
+        config &= !0x00E0;  // Clear sample rate bits
+        config |= rate as u16;  // Set new rate
+        self.write_register(Pointers::Config as u8, config as usize)?;
+        Ok(())
+    }
+    
+    /// Get the current sample rate setting
+    pub fn get_sample_rate(&mut self) -> Result<u16, LinuxI2CError> {
+        let config = self.read_register_16bit(Pointers::Config as u8)?;
+        Ok(config & 0x00E0)
+    }
+    
+    /// Set the operating mode (continuous or single-shot)
+    ///
+    /// # Arguments
+    /// * `mode` - Operating mode
+    pub fn set_mode(&mut self, mode: Modes) -> ADCResult {
+        let mut config = self.read_register_16bit(Pointers::Config as u8)?;
+        config &= !0x0100;  // Clear mode bit
+        config |= mode as u16;  // Set new mode
+        self.write_register(Pointers::Config as u8, config as usize)?;
+        Ok(())
+    }
+    
+    /// Set the low threshold for comparator
+    ///
+    /// # Arguments
+    /// * `threshold` - Threshold value
+    pub fn set_low_threshold(&mut self, threshold: u16) -> ADCResult {
+        self.write_register(Pointers::LowThresh as u8, threshold as usize)?;
+        Ok(())
+    }
+    
+    /// Set the high threshold for comparator
+    ///
+    /// # Arguments
+    /// * `threshold` - Threshold value
+    pub fn set_high_threshold(&mut self, threshold: u16) -> ADCResult {
+        self.write_register(Pointers::HighThresh as u8, threshold as usize)?;
+        Ok(())
+    }
+    
+    /// Get the low threshold value
+    pub fn get_low_threshold(&mut self) -> ReadResult {
+        self.read_register_16bit(Pointers::LowThresh as u8)
+    }
+    
+    /// Get the high threshold value
+    pub fn get_high_threshold(&mut self) -> ReadResult {
+        self.read_register_16bit(Pointers::HighThresh as u8)
+    }
+    
+    /// Convert raw ADC value to voltage
+    ///
+    /// # Arguments
+    /// * `raw_value` - Raw ADC reading
+    /// * `gain` - PGA gain setting used for the reading
+    ///
+    /// # Returns
+    /// Voltage in millivolts
+    pub fn raw_to_voltage(&self, raw_value: u16, gain: PGA) -> f32 {
+        let fsrange = match gain {
+            PGA::TwoThirds => 6144.0,
+            PGA::One => 4096.0,
+            PGA::Two => 2048.0,
+            PGA::Four => 1024.0,
+            PGA::Eight => 512.0,
+            PGA::Sixteen => 256.0,
+            _ => 2048.0,  // Default
+        };
+        
+        if self.config.model == "ADS1015" {
+            // 12-bit ADC
+            (raw_value as f32 / 2048.0) * fsrange
+        } else {
+            // 16-bit ADC (ADS1115)
+            (raw_value as f32 / 32768.0) * fsrange
+        }
+    }
+    
+    /// Start a continuous conversion mode
+    pub fn start_continuous(&mut self, channel: u8) -> ADCResult {
+        if channel > 3 {
+            return Ok(());
+        }
+        
+        let mut config = (OS::Single as u16) | (Modes::Continuous as u16) | (SampleRates::S1600Hz as u16);
+        config |= PGA::Two as u16;
+        
+        config |= match channel {
+            0 => Mux::Single0 as u16,
+            1 => Mux::Single1 as u16,
+            2 => Mux::Single2 as u16,
+            3 => Mux::Single3 as u16,
+            _ => Mux::Single0 as u16,
+        };
+        
+        self.write_register(Pointers::Config as u8, config as usize)?;
+        Ok(())
+    }
+    
+    /// Stop continuous conversion mode
+    pub fn stop_continuous(&mut self) -> ADCResult {
+        self.set_mode(Modes::Single)
+    }
+    
+    /// Read the last conversion result (useful in continuous mode)
+    pub fn read_last_conversion(&mut self) -> ReadResult {
+        let result = self.read_register_16bit(Pointers::Convert as u8)?;
+        if self.config.model == "ADS1015" {
+            Ok(result >> 4)
+        } else {
+            Ok(result)
+        }
+    }
+    
 
 
     /// Read a single-ended ADC value from the specified channel
@@ -437,12 +577,351 @@ mod tests {
         
         assert_eq!(Pointers::Convert as u8, 0x00);
         assert_eq!(Pointers::Config as u8, 0x01);
+        assert_eq!(Pointers::LowThresh as u8, 0x02);
+        assert_eq!(Pointers::HighThresh as u8, 0x03);
         
         assert_eq!(OS::Single as u16, 0x8000);
-        assert_eq!(Modes::Single as u16, 0x0100);
+        assert_eq!(OS::Busy as u16, 0x0000);
         
+        assert_eq!(Modes::Single as u16, 0x0100);
+        assert_eq!(Modes::Continuous as u16, 0x0000);
+        
+        assert_eq!(PGA::Mask as u16, 0x0E00);
+        assert_eq!(PGA::TwoThirds as u16, 0x0000);
+        assert_eq!(PGA::One as u16, 0x0200);
         assert_eq!(PGA::Two as u16, 0x0400);
+        assert_eq!(PGA::Four as u16, 0x0600);
+        assert_eq!(PGA::Eight as u16, 0x0800);
+        assert_eq!(PGA::Sixteen as u16, 0x0A00);
+        
+        assert_eq!(SampleRates::S128Hz as u16, 0x0000);
+        assert_eq!(SampleRates::S250Hz as u16, 0x0020);
+        assert_eq!(SampleRates::S490Hz as u16, 0x0040);
+        assert_eq!(SampleRates::S920Hz as u16, 0x0060);
         assert_eq!(SampleRates::S1600Hz as u16, 0x0080);
+        assert_eq!(SampleRates::S2400Hz as u16, 0x00A0);
+        assert_eq!(SampleRates::S3300Hz as u16, 0x00C0);
+    }
+
+    #[test]
+    fn test_mux_values() {
+        assert_eq!(Mux::Single0 as u16, 0x4000);
+        assert_eq!(Mux::Single1 as u16, 0x5000);
+        assert_eq!(Mux::Single2 as u16, 0x6000);
+        assert_eq!(Mux::Single3 as u16, 0x7000);
+        assert_eq!(Mux::DiffP0N1 as u16, 0x0000);
+        assert_eq!(Mux::DiffP0N3 as u16, 0x1000);
+        assert_eq!(Mux::DiffP1N3 as u16, 0x2000);
+        assert_eq!(Mux::DiffP2N3 as u16, 0x3000);
+    }
+
+    #[test]
+    fn test_comparator_values() {
+        assert_eq!(Cmode::Trad as u16, 0x0000);
+        assert_eq!(Cmode::Window as u16, 0x0010);
+        
+        assert_eq!(Cpol::ActvLow as u16, 0x0000);
+        assert_eq!(Cpol::ActvHigh as u16, 0x0008);
+        
+        assert_eq!(Clat::NonLat as u16, 0x0000);
+        assert_eq!(Clat::Latch as u16, 0x0004);
+        
+        assert_eq!(Cque::OneConv as u16, 0x0000);
+        assert_eq!(Cque::TwoConv as u16, 0x0001);
+        assert_eq!(Cque::FourConv as u16, 0x0002);
+        assert_eq!(Cque::None as u16, 0x0003);
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_get_single_ended_all_channels() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        for channel in 0..4 {
+            let value = adc.get_single_ended(channel)
+                .expect(&format!("Should read channel {}", channel));
+            assert!(value <= 4095, "12-bit ADC value should be <= 4095");
+            println!("Channel {} value: {}", channel, value);
+        }
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_get_single_ended_invalid_channel() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        let value = adc.get_single_ended(4).unwrap();
+        assert_eq!(value, 0, "Invalid channel should return 0");
+        
+        let value = adc.get_single_ended(255).unwrap();
+        assert_eq!(value, 0, "Invalid channel should return 0");
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_get_differential_modes() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Test default differential mode
+        let value = adc.get_differential(None)
+            .expect("Should read differential P0-N1");
+        println!("Differential P0-N1: {}", value);
+        
+        // Test all differential modes
+        let modes = vec![
+            (Mux::DiffP0N1 as u16, "P0-N1"),
+            (Mux::DiffP0N3 as u16, "P0-N3"),
+            (Mux::DiffP1N3 as u16, "P1-N3"),
+            (Mux::DiffP2N3 as u16, "P2-N3"),
+        ];
+        
+        for (mode, name) in modes {
+            let value = adc.get_differential(Some(mode))
+                .expect(&format!("Should read differential {}", name));
+            println!("Differential {}: {}", name, value);
+        }
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_get_differential_invalid_mode() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Test invalid differential mode
+        let value = adc.get_differential(Some(0xFFFF)).unwrap();
+        assert_eq!(value, 0, "Invalid differential mode should return 0");
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_get_analog_data() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Test that get_analog_data matches get_single_ended
+        for channel in 0..4 {
+            let single_value = adc.get_single_ended(channel)
+                .expect("Should read single-ended");
+            let analog_value = adc.get_analog_data(channel)
+                .expect("Should read analog data");
+            assert_eq!(single_value, analog_value, 
+                "get_analog_data should match get_single_ended for channel {}", channel);
+        }
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_ads1115_mode() {
+        let config = QwiicADCConfig::new("ADS1115".to_string());
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        let value = adc.get_single_ended(0)
+            .expect("Should read channel 0");
+        // ADS1115 is 16-bit, value is u16 so automatically <= 65535
+        println!("ADS1115 Channel 0 value: {}", value);
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_multiple_addresses() {
+        let addresses = vec![
+            (Addresses::Gnd as u16, "GND"),
+            (Addresses::Vdd as u16, "VDD"),
+            (Addresses::Sda as u16, "SDA"),
+            (Addresses::Scl as u16, "SCL"),
+        ];
+        
+        for (addr, name) in addresses {
+            let config = QwiicADCConfig::default();
+            match QwiicADC::new(config, "/dev/i2c-1", addr) {
+                Ok(mut adc) => {
+                    adc.init().expect("Failed to initialize");
+                    if adc.is_connected() {
+                        println!("Device found at address 0x{:02X} ({})", addr, name);
+                    } else {
+                        println!("No device at address 0x{:02X} ({})", addr, name);
+                    }
+                },
+                Err(e) => {
+                    println!("Could not access address 0x{:02X} ({}): {:?}", addr, name, e);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_gain_settings() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Test setting and getting different gains
+        let gains = vec![
+            (PGA::TwoThirds, "2/3"),
+            (PGA::One, "1"),
+            (PGA::Two, "2"),
+            (PGA::Four, "4"),
+            (PGA::Eight, "8"),
+            (PGA::Sixteen, "16"),
+        ];
+        
+        for (gain, name) in gains {
+            adc.set_gain(gain).expect(&format!("Failed to set gain {}", name));
+            let current_gain = adc.get_gain().expect("Failed to get gain");
+            assert_eq!(current_gain, gain as u16, "Gain {} not set correctly", name);
+        }
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_sample_rate_settings() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Test setting and getting different sample rates
+        let rates = vec![
+            (SampleRates::S128Hz, "128Hz"),
+            (SampleRates::S250Hz, "250Hz"),
+            (SampleRates::S490Hz, "490Hz"),
+            (SampleRates::S920Hz, "920Hz"),
+            (SampleRates::S1600Hz, "1600Hz"),
+            (SampleRates::S2400Hz, "2400Hz"),
+            (SampleRates::S3300Hz, "3300Hz"),
+        ];
+        
+        for (rate, name) in rates {
+            adc.set_sample_rate(rate).expect(&format!("Failed to set rate {}", name));
+            let current_rate = adc.get_sample_rate().expect("Failed to get rate");
+            assert_eq!(current_rate, rate as u16, "Sample rate {} not set correctly", name);
+        }
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_threshold_settings() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Test setting and getting thresholds
+        let test_low = 1024;
+        let test_high = 3072;
+        
+        adc.set_low_threshold(test_low).expect("Failed to set low threshold");
+        adc.set_high_threshold(test_high).expect("Failed to set high threshold");
+        
+        let low = adc.get_low_threshold().expect("Failed to get low threshold");
+        let high = adc.get_high_threshold().expect("Failed to get high threshold");
+        
+        assert_eq!(low, test_low, "Low threshold not set correctly");
+        assert_eq!(high, test_high, "High threshold not set correctly");
+    }
+
+    #[test]
+    fn test_raw_to_voltage_ads1015() {
+        let config = QwiicADCConfig::default();  // ADS1015
+        let adc = QwiicADC::new(config, "/dev/i2c-1", 0x48);
+        
+        if let Ok(adc) = adc {
+            // Test with PGA::Two (±2.048V range)
+            let raw = 2048;  // Half of 12-bit range
+            let voltage = adc.raw_to_voltage(raw, PGA::Two);
+            assert_eq!(voltage, 2048.0, "Voltage calculation incorrect for ADS1015");
+            
+            // Test with PGA::One (±4.096V range)
+            let voltage = adc.raw_to_voltage(raw, PGA::One);
+            assert_eq!(voltage, 4096.0, "Voltage calculation incorrect for ADS1015");
+        }
+    }
+
+    #[test]
+    fn test_raw_to_voltage_ads1115() {
+        let config = QwiicADCConfig::new("ADS1115".to_string());
+        let adc = QwiicADC::new(config, "/dev/i2c-1", 0x48);
+        
+        if let Ok(adc) = adc {
+            // Test with PGA::Two (±2.048V range)
+            let raw = 32768;  // Half of 16-bit range
+            let voltage = adc.raw_to_voltage(raw, PGA::Two);
+            assert_eq!(voltage, 2048.0, "Voltage calculation incorrect for ADS1115");
+            
+            // Test with PGA::One (±4.096V range)
+            let voltage = adc.raw_to_voltage(raw, PGA::One);
+            assert_eq!(voltage, 4096.0, "Voltage calculation incorrect for ADS1115");
+        }
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_continuous_mode() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Start continuous mode on channel 0
+        adc.start_continuous(0).expect("Failed to start continuous mode");
+        
+        // Read multiple conversions
+        for i in 0..5 {
+            thread::sleep(Duration::from_millis(10));
+            let value = adc.read_last_conversion()
+                .expect("Failed to read conversion");
+            println!("Continuous reading {}: {}", i, value);
+        }
+        
+        // Stop continuous mode
+        adc.stop_continuous().expect("Failed to stop continuous mode");
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_mode_switching() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Set single mode
+        adc.set_mode(Modes::Single).expect("Failed to set single mode");
+        
+        // Set continuous mode
+        adc.set_mode(Modes::Continuous).expect("Failed to set continuous mode");
+        
+        // Back to single mode
+        adc.set_mode(Modes::Single).expect("Failed to set single mode");
     }
 }
 
