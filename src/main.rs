@@ -5,7 +5,23 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    let config = QwiicADCConfig::default();
+    // Create configuration with custom timing for hardware compatibility
+    // Default timing: 10ms conversion delay, 10μs register delay
+    // Adjust these values based on your hardware requirements
+    let config = QwiicADCConfig::default()
+        .with_conversion_delay(10)  // Can be adjusted for faster/slower hardware
+        .with_register_delay(10);    // Can be adjusted for I2C bus speed
+    
+    // Example of faster timing for compatible hardware:
+    // let fast_config = QwiicADCConfig::default()
+    //     .with_conversion_delay(5)
+    //     .with_register_delay(5);
+    
+    // Example of slower timing for reliability:
+    // let slow_config = QwiicADCConfig::default()
+    //     .with_conversion_delay(20)
+    //     .with_register_delay(20);
+    
     let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48).expect("Could not init ADC device");
 
     // Initialize the ADC
