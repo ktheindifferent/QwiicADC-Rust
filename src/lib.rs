@@ -42,6 +42,9 @@ use std::time::Duration;
 use i2cdev::core::*;
 use i2cdev::linux::{LinuxI2CDevice, LinuxI2CError};
 
+use std::fmt;
+use std::error::Error;
+
 /// I2C addresses for the ADS1015/ADS1115
 /// Address is determined by the ADDR pin connection
 #[derive(Copy, Clone)]
@@ -210,14 +213,49 @@ impl Default for QwiicADCConfig {
     }
 }
 
+/// Custom error type for ADC operations
+#[derive(Debug)]
+pub enum AdcError {
+    /// Invalid channel number (must be 0-3)
+    InvalidChannel(u8),
+    /// I2C communication error
+    I2cError(LinuxI2CError),
+}
+
+impl fmt::Display for AdcError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AdcError::InvalidChannel(channel) => {
+                write!(f, "Invalid channel number: {}. Channel must be between 0 and 3", channel)
+            }
+            AdcError::I2cError(err) => write!(f, "I2C error: {}", err),
+        }
+    }
+}
+
+impl Error for AdcError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AdcError::InvalidChannel(_) => None,
+            AdcError::I2cError(err) => Some(err),
+        }
+    }
+}
+
+impl From<LinuxI2CError> for AdcError {
+    fn from(err: LinuxI2CError) -> Self {
+        AdcError::I2cError(err)
+    }
+}
+
 /// Main struct for interacting with the Qwiic ADC
 pub struct QwiicADC {
     dev: LinuxI2CDevice,
     config: QwiicADCConfig,
 }
 
-type ADCResult = Result<(), LinuxI2CError>;
-type ReadResult = Result<u16, LinuxI2CError>;
+type ADCResult = Result<(), AdcError>;
+type ReadResult = Result<u16, AdcError>;
 
 impl QwiicADC {
     /// Create a new QwiicADC instance
@@ -226,7 +264,7 @@ impl QwiicADC {
     /// * `config` - Configuration for the ADC
     /// * `bus` - I2C bus path (e.g., "/dev/i2c-1")
     /// * `i2c_addr` - I2C address of the device
-    pub fn new(config: QwiicADCConfig, bus: &str, i2c_addr: u16) -> Result<QwiicADC, LinuxI2CError> {
+    pub fn new(config: QwiicADCConfig, bus: &str, i2c_addr: u16) -> Result<QwiicADC, AdcError> {
         let dev = LinuxI2CDevice::new(bus, i2c_addr)?;
         Ok(QwiicADC {
             dev,
@@ -259,7 +297,7 @@ impl QwiicADC {
     }
     
     /// Get the current gain setting
-    pub fn get_gain(&mut self) -> Result<u16, LinuxI2CError> {
+    pub fn get_gain(&mut self) -> Result<u16, AdcError> {
         let config = self.read_register_16bit(Pointers::Config as u8)?;
         Ok(config & (PGA::Mask as u16))
     }
@@ -277,7 +315,7 @@ impl QwiicADC {
     }
     
     /// Get the current sample rate setting
-    pub fn get_sample_rate(&mut self) -> Result<u16, LinuxI2CError> {
+    pub fn get_sample_rate(&mut self) -> Result<u16, AdcError> {
         let config = self.read_register_16bit(Pointers::Config as u8)?;
         Ok(config & 0x00E0)
     }
@@ -351,9 +389,16 @@ impl QwiicADC {
     }
     
     /// Start a continuous conversion mode
+    ///
+    /// # Arguments
+    /// * `channel` - Channel number (must be 0-3)
+    ///
+    /// # Returns
+    /// * `Ok(())` if successful
+    /// * `Err(AdcError::InvalidChannel)` if channel > 3
     pub fn start_continuous(&mut self, channel: u8) -> ADCResult {
         if channel > 3 {
-            return Ok(());
+            return Err(AdcError::InvalidChannel(channel));
         }
         
         let mut config = (OS::Single as u16) | (Modes::Continuous as u16) | (SampleRates::S1600Hz as u16);
@@ -391,13 +436,14 @@ impl QwiicADC {
     /// Read a single-ended ADC value from the specified channel
     ///
     /// # Arguments
-    /// * `channel` - Channel number (0-3)
+    /// * `channel` - Channel number (must be 0-3)
     ///
     /// # Returns
-    /// 12-bit ADC value for ADS1015, 16-bit for ADS1115
+    /// * `Ok(value)` - 12-bit ADC value for ADS1015, 16-bit for ADS1115
+    /// * `Err(AdcError::InvalidChannel)` if channel > 3
     pub fn get_single_ended(&mut self, channel: u8) -> ReadResult {
         if channel > 3 {
-            return Ok(0);
+            return Err(AdcError::InvalidChannel(channel));
         }
 
         let mut config = (OS::Single as u16) | (Modes::Single as u16) | (SampleRates::S1600Hz as u16);
@@ -501,7 +547,7 @@ impl QwiicADC {
 
 
     /// Read a single byte from a register
-    pub fn read_register(&mut self, location: u8) -> Result<u8, LinuxI2CError> {
+    pub fn read_register(&mut self, location: u8) -> Result<u8, AdcError> {
         self.dev.smbus_write_byte(location)?;
         let byte = self.dev.smbus_read_byte()?;
         Ok(byte)
@@ -616,6 +662,32 @@ mod tests {
     }
 
     #[test]
+    fn test_channel_validation_errors() {
+        // Test that AdcError properly formats invalid channel messages
+        let err = AdcError::InvalidChannel(4);
+        assert_eq!(
+            format!("{}", err),
+            "Invalid channel number: 4. Channel must be between 0 and 3"
+        );
+        
+        let err = AdcError::InvalidChannel(255);
+        assert_eq!(
+            format!("{}", err),
+            "Invalid channel number: 255. Channel must be between 0 and 3"
+        );
+    }
+
+    #[test]
+    fn test_adc_error_display() {
+        // Test Display trait implementation
+        let err = AdcError::InvalidChannel(10);
+        let display = format!("{}", err);
+        assert!(display.contains("Invalid channel"));
+        assert!(display.contains("10"));
+        assert!(display.contains("between 0 and 3"));
+    }
+
+    #[test]
     fn test_comparator_values() {
         assert_eq!(Cmode::Trad as u16, 0x0000);
         assert_eq!(Cmode::Window as u16, 0x0010);
@@ -658,11 +730,23 @@ mod tests {
         
         adc.init().expect("Failed to initialize");
         
-        let value = adc.get_single_ended(4).unwrap();
-        assert_eq!(value, 0, "Invalid channel should return 0");
+        // Test channel 4 (invalid)
+        let result = adc.get_single_ended(4);
+        assert!(result.is_err(), "Channel 4 should return an error");
+        if let Err(AdcError::InvalidChannel(ch)) = result {
+            assert_eq!(ch, 4, "Error should contain the invalid channel number");
+        } else {
+            panic!("Expected InvalidChannel error");
+        }
         
-        let value = adc.get_single_ended(255).unwrap();
-        assert_eq!(value, 0, "Invalid channel should return 0");
+        // Test channel 255 (invalid)
+        let result = adc.get_single_ended(255);
+        assert!(result.is_err(), "Channel 255 should return an error");
+        if let Err(AdcError::InvalidChannel(ch)) = result {
+            assert_eq!(ch, 255, "Error should contain the invalid channel number");
+        } else {
+            panic!("Expected InvalidChannel error");
+        }
     }
 
     #[test]
@@ -903,6 +987,34 @@ mod tests {
         
         // Stop continuous mode
         adc.stop_continuous().expect("Failed to stop continuous mode");
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_start_continuous_invalid_channel() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Test invalid channel 4
+        let result = adc.start_continuous(4);
+        assert!(result.is_err(), "Channel 4 should return an error");
+        if let Err(AdcError::InvalidChannel(ch)) = result {
+            assert_eq!(ch, 4, "Error should contain the invalid channel number");
+        } else {
+            panic!("Expected InvalidChannel error");
+        }
+        
+        // Test invalid channel 100
+        let result = adc.start_continuous(100);
+        assert!(result.is_err(), "Channel 100 should return an error");
+        if let Err(AdcError::InvalidChannel(ch)) = result {
+            assert_eq!(ch, 100, "Error should contain the invalid channel number");
+        } else {
+            panic!("Expected InvalidChannel error");
+        }
     }
 
     #[test]
