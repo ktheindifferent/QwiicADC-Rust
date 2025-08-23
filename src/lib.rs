@@ -447,8 +447,8 @@ impl QwiicADC {
     pub fn get_differential(&mut self, cfg_mux_diff: Option<u16>) -> ReadResult {
 
         let mut config_mux_diff = Mux::DiffP0N1 as u16;
-        if cfg_mux_diff.is_some(){
-            config_mux_diff = cfg_mux_diff.unwrap();
+        if let Some(mux_diff) = cfg_mux_diff {
+            config_mux_diff = mux_diff;
         }
 
         if config_mux_diff == Mux::DiffP0N1 as u16 ||
@@ -658,10 +658,10 @@ mod tests {
         
         adc.init().expect("Failed to initialize");
         
-        let value = adc.get_single_ended(4).unwrap();
+        let value = adc.get_single_ended(4).expect("Should handle invalid channel");
         assert_eq!(value, 0, "Invalid channel should return 0");
         
-        let value = adc.get_single_ended(255).unwrap();
+        let value = adc.get_single_ended(255).expect("Should handle invalid channel");
         assert_eq!(value, 0, "Invalid channel should return 0");
     }
 
@@ -704,7 +704,7 @@ mod tests {
         adc.init().expect("Failed to initialize");
         
         // Test invalid differential mode
-        let value = adc.get_differential(Some(0xFFFF)).unwrap();
+        let value = adc.get_differential(Some(0xFFFF)).expect("Should handle invalid differential mode");
         assert_eq!(value, 0, "Invalid differential mode should return 0");
     }
 
@@ -922,6 +922,31 @@ mod tests {
         
         // Back to single mode
         adc.set_mode(Modes::Single).expect("Failed to set single mode");
+    }
+
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_get_differential_with_none_and_some() {
+        let config = QwiicADCConfig::default();
+        let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device");
+        
+        adc.init().expect("Failed to initialize");
+        
+        // Test with None - should use default DiffP0N1
+        let value_none = adc.get_differential(None)
+            .expect("Should handle None case");
+        println!("Differential with None (default P0-N1): {}", value_none);
+        
+        // Test with Some - should use provided value
+        let value_some = adc.get_differential(Some(Mux::DiffP0N3 as u16))
+            .expect("Should handle Some case");
+        println!("Differential with Some(P0-N3): {}", value_some);
+        
+        // Test with another Some value
+        let value_some2 = adc.get_differential(Some(Mux::DiffP1N3 as u16))
+            .expect("Should handle Some case");
+        println!("Differential with Some(P1-N3): {}", value_some2);
     }
 }
 
