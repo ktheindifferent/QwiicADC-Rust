@@ -35,8 +35,10 @@ fn main() {
     for channel in 0..4 {
         match adc.get_single_ended(channel) {
             Ok(value) => {
-                let voltage = adc.raw_to_voltage(value, PGA::Two);
-                println!("  Channel {channel}: {value} (raw) = {voltage:.2} mV");
+                match adc.raw_to_voltage(value, PGA::Two) {
+                    Ok(voltage) => println!("  Channel {channel}: {value} (raw) = {voltage:.2} mV"),
+                    Err(e) => println!("  Channel {channel}: Voltage conversion error - {e:?}"),
+                }
             },
             Err(e) => println!("  Channel {channel}: Error - {e:?}"),
         }
@@ -54,19 +56,29 @@ fn main() {
     for (mode, name) in diff_modes {
         match adc.get_differential(mode) {
             Ok(value) => {
-                let voltage = adc.raw_to_voltage(value, PGA::Two);
-                println!("  {name}: {value} (raw) = {voltage:.2} mV");
+                match adc.raw_to_voltage(value, PGA::Two) {
+                    Ok(voltage) => println!("  {name}: {value} (raw) = {voltage:.2} mV"),
+                    Err(e) => println!("  {name}: Voltage conversion error - {e:?}"),
+                }
             },
             Err(e) => println!("  {name}: Error - {e:?}"),
         }
     }
 
-    // Set thresholds for comparator
+    // Set thresholds for comparator (demonstrating validation)
     println!("\nSetting comparator thresholds:");
+    // Valid thresholds for ADS1015: -2048 to 2047
     adc.set_low_threshold(1000).expect("Failed to set low threshold");
-    adc.set_high_threshold(3000).expect("Failed to set high threshold");
-    println!("  Low threshold: 1000");
-    println!("  High threshold: 3000");
+    adc.set_high_threshold(2000).expect("Failed to set high threshold");
+    println!("  Low threshold: 1000 (valid for ADS1015: -2048 to 2047)");
+    println!("  High threshold: 2000 (valid for ADS1015: -2048 to 2047)");
+    
+    // Demonstrate invalid threshold handling
+    println!("\nDemonstrating threshold validation:");
+    match adc.set_low_threshold(-3000) {
+        Ok(_) => println!("  Threshold -3000 accepted (unexpected)"),
+        Err(e) => println!("  Threshold -3000 rejected: {}", e),
+    }
 
     // Demonstrate continuous mode
     println!("\nContinuous mode on channel 0 (5 readings):");
@@ -76,8 +88,10 @@ fn main() {
         thread::sleep(Duration::from_millis(10));
         match adc.read_last_conversion() {
             Ok(value) => {
-                let voltage = adc.raw_to_voltage(value, PGA::Two);
-                println!("  Reading {}: {value} (raw) = {voltage:.2} mV", i + 1);
+                match adc.raw_to_voltage(value, PGA::Two) {
+                    Ok(voltage) => println!("  Reading {}: {value} (raw) = {voltage:.2} mV", i + 1),
+                    Err(e) => println!("  Reading {}: Voltage conversion error - {e:?}", i + 1),
+                }
             },
             Err(e) => println!("  Reading {}: Error - {e:?}", i + 1),
         }
@@ -99,8 +113,10 @@ fn main() {
         adc.set_gain(gain).expect("Failed to set gain");
         match adc.get_single_ended(0) {
             Ok(value) => {
-                let voltage = adc.raw_to_voltage(value, gain);
-                println!("  Gain {range}: {value} (raw) = {voltage:.2} mV");
+                match adc.raw_to_voltage(value, gain) {
+                    Ok(voltage) => println!("  Gain {range}: {value} (raw) = {voltage:.2} mV"),
+                    Err(e) => println!("  Gain {range}: Voltage conversion error - {e:?}"),
+                }
             },
             Err(e) => println!("  Gain {range}: Error - {e:?}"),
         }

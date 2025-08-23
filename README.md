@@ -39,7 +39,7 @@ fn main() {
     
     // Read single-ended channel
     let raw_value = adc.get_single_ended(0).unwrap();
-    let voltage = adc.raw_to_voltage(raw_value, PGA::Two);
+    let voltage = adc.raw_to_voltage(raw_value, PGA::Two).unwrap();
     println!("Channel 0: {} mV", voltage);
     
     // Read differential input
@@ -66,6 +66,9 @@ fn main() {
 - ✅ Voltage conversion from raw ADC values
 - ✅ Threshold settings for comparator mode
 - ✅ Support for both ADS1015 (12-bit) and ADS1115 (16-bit)
+- ✅ **Input validation with detailed error messages**
+- ✅ **Automatic gain verification in voltage conversion**
+- ✅ **Threshold range validation based on ADC model**
 
 ## API Documentation
 
@@ -74,16 +77,61 @@ The library provides a comprehensive API for controlling the ADC:
 - `new()` - Create a new ADC instance
 - `init()` - Initialize the device
 - `is_connected()` - Check if device is responding
-- `get_single_ended()` - Read single-ended channel (0-3)
-- `get_differential()` - Read differential input
+- `get_single_ended()` - Read single-ended channel (0-3, validates channel number)
+- `get_differential()` - Read differential input (validates configuration)
 - `get_analog_data()` - Convenience wrapper for single-ended read
 - `set_gain()` / `get_gain()` - Configure/read gain settings
 - `set_sample_rate()` / `get_sample_rate()` - Configure/read sample rate
 - `set_mode()` - Set operating mode (continuous/single-shot)
 - `start_continuous()` / `stop_continuous()` - Control continuous mode
 - `read_last_conversion()` - Read last conversion result
-- `set_low_threshold()` / `set_high_threshold()` - Configure comparator
-- `raw_to_voltage()` - Convert raw ADC to millivolts
+- `set_low_threshold()` / `set_high_threshold()` - Configure comparator with validation:
+  - ADS1015: Valid range is -2048 to 2047 (12-bit)
+  - ADS1115: Valid range is -32768 to 32767 (16-bit)
+- `raw_to_voltage()` - Convert raw ADC to millivolts (verifies gain matches current configuration)
+
+### Error Handling
+
+The library now includes comprehensive error handling with a custom `AdcError` enum:
+
+```rust
+pub enum AdcError {
+    I2C(LinuxI2CError),           // I2C communication errors
+    InvalidThreshold(i16),        // Threshold outside valid range
+    GainMismatch { expected: PGA, provided: PGA }, // Gain mismatch in voltage conversion
+    InvalidChannel(u8),           // Channel number > 3
+    InvalidConfiguration(String), // Invalid differential mode or other config
+}
+```
+
+### Input Validation Examples
+
+```rust
+// Channel validation
+match adc.get_single_ended(5) {
+    Err(AdcError::InvalidChannel(ch)) => println!("Invalid channel: {}", ch),
+    _ => {}
+}
+
+// Threshold validation for ADS1015
+match adc.set_low_threshold(-3000) {
+    Err(AdcError::InvalidThreshold(val)) => {
+        println!("Invalid threshold: {}. Must be -2048 to 2047", val)
+    },
+    _ => {}
+}
+
+// Gain verification in voltage conversion
+adc.set_gain(PGA::Two).unwrap();
+let raw = adc.get_single_ended(0).unwrap();
+// This will fail if current gain doesn't match
+match adc.raw_to_voltage(raw, PGA::Four) {
+    Err(AdcError::GainMismatch { expected, provided }) => {
+        println!("Gain mismatch: expected {:?}, provided {:?}", expected, provided)
+    },
+    _ => {}
+}
+```
 
 See the [documentation](https://docs.rs/qwiic-adc-rs) for detailed API information.
 
