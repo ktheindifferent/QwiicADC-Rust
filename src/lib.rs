@@ -13,7 +13,14 @@
 //! ```no_run
 //! use qwiic_adc_rs::*;
 //!
+//! // Use default timing configuration
 //! let config = QwiicADCConfig::default();
+//! 
+//! // Or customize timing for your hardware:
+//! // let config = QwiicADCConfig::default()
+//! //     .with_conversion_delay(5)  // 5ms conversion delay
+//! //     .with_register_delay(5);   // 5μs register delay
+//! 
 //! let mut adc = QwiicADC::new(config, "/dev/i2c-1", 0x48).unwrap();
 //! adc.init().unwrap();
 //! let value = adc.get_single_ended(0).unwrap();
@@ -41,6 +48,12 @@ use std::time::Duration;
 
 use i2cdev::core::*;
 use i2cdev::linux::{LinuxI2CDevice, LinuxI2CError};
+
+/// Default delay in milliseconds for ADC conversion
+const DEFAULT_CONVERSION_DELAY_MS: u64 = 10;
+
+/// Default delay in microseconds for register operations
+const DEFAULT_REGISTER_DELAY_US: u64 = 10;
 
 /// I2C addresses for the ADS1015/ADS1115
 /// Address is determined by the ADDR pin connection
@@ -191,7 +204,11 @@ pub enum Cque {
 /// Configuration for the Qwiic ADC
 pub struct QwiicADCConfig {
     /// Model of ADC chip ("ADS1015" or "ADS1115")
-    model: String
+    model: String,
+    /// Delay in milliseconds for ADC conversion (default: 10)
+    pub conversion_delay_ms: u64,
+    /// Delay in microseconds for register operations (default: 10)
+    pub register_delay_us: u64,
 }
 
 impl QwiicADCConfig {
@@ -199,7 +216,21 @@ impl QwiicADCConfig {
     pub fn new(model: String) -> QwiicADCConfig {
         QwiicADCConfig {
             model,
+            conversion_delay_ms: DEFAULT_CONVERSION_DELAY_MS,
+            register_delay_us: DEFAULT_REGISTER_DELAY_US,
         }
+    }
+    
+    /// Set the conversion delay in milliseconds
+    pub fn with_conversion_delay(mut self, ms: u64) -> Self {
+        self.conversion_delay_ms = ms;
+        self
+    }
+    
+    /// Set the register operation delay in microseconds
+    pub fn with_register_delay(mut self, us: u64) -> Self {
+        self.register_delay_us = us;
+        self
     }
 }
 
@@ -237,7 +268,7 @@ impl QwiicADC {
     /// Initialize the ADC device
     pub fn init(&mut self) -> ADCResult {
         // Wait for the ADC to set up
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(self.config.conversion_delay_ms));
         Ok(())
     }
 
@@ -422,7 +453,7 @@ impl QwiicADC {
         self.write_register(Pointers::Config as u8, config as usize)?;
 
         // Wait for conversion to complete
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(self.config.conversion_delay_ms));
 
 
         let result = self.read_register_16bit(Pointers::Convert as u8)?;
@@ -470,7 +501,7 @@ impl QwiicADC {
         self.write_register(Pointers::Config as u8, config as usize)?;
 
         // Wait for conversion to complete
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(self.config.conversion_delay_ms));
 
 
         let result = self.read_register_16bit(Pointers::Convert as u8)?;
@@ -528,7 +559,7 @@ impl QwiicADC {
     /// Write a single byte command
     pub fn write_byte(&mut self, command: u8) -> ADCResult {
         self.dev.smbus_write_byte(command)?;
-        thread::sleep(Duration::from_micros(10));
+        thread::sleep(Duration::from_micros(self.config.register_delay_us));
         Ok(())
     }
 }
@@ -565,6 +596,55 @@ mod tests {
         
         let config = QwiicADCConfig::new("ADS1115".to_string());
         assert_eq!(config.model, "ADS1115");
+    }
+    
+    #[test]
+    fn test_timing_configuration() {
+        // Test default timing values
+        let config = QwiicADCConfig::default();
+        assert_eq!(config.conversion_delay_ms, DEFAULT_CONVERSION_DELAY_MS);
+        assert_eq!(config.register_delay_us, DEFAULT_REGISTER_DELAY_US);
+        
+        // Test custom timing values using builder methods
+        let config = QwiicADCConfig::default()
+            .with_conversion_delay(20)
+            .with_register_delay(50);
+        assert_eq!(config.conversion_delay_ms, 20);
+        assert_eq!(config.register_delay_us, 50);
+        
+        // Test chaining builder methods
+        let config = QwiicADCConfig::new("ADS1115".to_string())
+            .with_conversion_delay(5)
+            .with_register_delay(100);
+        assert_eq!(config.model, "ADS1115");
+        assert_eq!(config.conversion_delay_ms, 5);
+        assert_eq!(config.register_delay_us, 100);
+    }
+    
+    #[test]
+    #[ignore] // Requires hardware
+    fn test_custom_timing_with_hardware() {
+        // Test with fast timing for compatible hardware
+        let fast_config = QwiicADCConfig::default()
+            .with_conversion_delay(5)
+            .with_register_delay(5);
+        
+        let mut fast_adc = QwiicADC::new(fast_config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device with fast timing");
+        fast_adc.init().expect("Failed to initialize with fast timing");
+        
+        // Test with slow timing for reliability
+        let slow_config = QwiicADCConfig::default()
+            .with_conversion_delay(20)
+            .with_register_delay(20);
+        
+        let mut slow_adc = QwiicADC::new(slow_config, "/dev/i2c-1", 0x48)
+            .expect("Could not init device with slow timing");
+        slow_adc.init().expect("Failed to initialize with slow timing");
+        
+        // Both configurations should work
+        assert!(fast_adc.is_connected(), "Fast timing device should be connected");
+        assert!(slow_adc.is_connected(), "Slow timing device should be connected");
     }
 
     #[test]
